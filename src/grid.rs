@@ -1,5 +1,5 @@
 //Lat = Y Long = X
-use geo::{Point, Rect};
+use geo::{Point, Rect, Coordinate};
 use geo::algorithm::geodesic_distance::GeodesicDistance; 
 
 pub enum Offset {
@@ -9,14 +9,27 @@ pub enum Offset {
     West
 }
 
-pub fn miles(p1 : &Point<f64>, p2 : &Point<f64>) -> f64 {
+fn miles(p1 : &Point<f64>, p2 : &Point<f64>) -> f64 {
     let meters_to_miles : f64 = 0.00062137119223733; 
     let meters = p1.geodesic_distance(&p2); 
     let miles : f64 = meters_to_miles * meters; 
     return miles
 }
 
-pub fn get_offset(start_point : &Point<f64>, miles : f64, offset : Offset) -> Point<f64> {
+pub fn get_grid(center_point : &Point<f64>, miles : f64) -> Rect<f64> {
+    let bottom_center : Point<f64> = get_offset(center_point, miles / 2., Offset::South); 
+    let bottom_left : Point<f64> = get_offset(&bottom_center, miles / 2., Offset::West); 
+    let top_left : Point<f64> = get_offset(&bottom_left, miles, Offset::North); 
+    let top_right : Point<f64> = get_offset(&top_left,  miles, Offset::East); 
+    let bl_coord : Coordinate<f64> = bottom_left.into(); 
+    let tr_coord : Coordinate<f64> = top_right.into(); 
+    Rect::new(
+        bl_coord,
+        tr_coord
+    )
+}
+
+fn get_offset(start_point : &Point<f64>, miles : f64, offset : Offset) -> Point<f64> {
     let miles_to_degrees : f64 = 64.52626802; 
     let degrees = miles / miles_to_degrees; 
     let mut lat_translate : f64 = 0. ; 
