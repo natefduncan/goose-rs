@@ -7,7 +7,7 @@ use reqwest::Client;
 use tokio::io::{self, AsyncWriteExt};
 use tokio::fs::File;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Coord {
     latitude : f64, 
     longitude : f64
@@ -18,7 +18,7 @@ struct Response {
     results : Vec<Place>
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Place {
     address : Option<String>, 
     address_lines : Vec<String>, 
@@ -38,8 +38,6 @@ pub fn get_url(q : &str, g: [Coordinate<f64>; 2]) -> String {
     return url; 
 }
 
-const CONCURRENT_REQUESTS: usize = 2;
-
 async fn write_to_json(mut outfile : tokio::fs::File, response : &Response) -> Result<(), Error> {
 
     Ok(())
@@ -51,7 +49,7 @@ async fn handle_error(e : reqwest::Error) -> Result<(), Error> {
 }
 
 #[tokio::main]
-pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64) {
+pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64, concurrent_requests : usize) {
     let grids = grid::get_grids(&start_point, distance_miles, 5.);
     let mut urls  = Vec::new(); 
     
@@ -67,13 +65,13 @@ pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64) {
                 resp.json::<Response>().await
             }
         })
-        .buffer_unordered(CONCURRENT_REQUESTS);
+        .buffer_unordered(concurrent_requests);
 
     let mut outfile = tokio::fs::File::create("output.json").await.expect("Failed to create file.");
     outfile.write("[".as_bytes()).await.expect("Could not write to file."); 
-    let mut is_first = 1; 
+    let mut is_first : u32 = 1; 
     while let Some(v) = bodies.next().await {
-        let data = v.unwrap(); 
+        let data = v.unwrap_or(Response { results : [].to_vec()});
         println!("Found {} places.", data.results.len()); 
         for place in data.results {
             let string = serde_json::to_string(&place).unwrap();
