@@ -6,6 +6,7 @@ use futures::{stream, StreamExt};
 use reqwest::Client;
 use tokio::io::{self, AsyncWriteExt};
 use tokio::fs::File;
+use indicatif::ProgressBar;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Coord {
@@ -56,6 +57,8 @@ pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64, co
     for g in grids {
         urls.push(get_url(q, g)); 
     }
+    let bar_length : u64 = urls.len() as u64; 
+    let bar = ProgressBar::new(bar_length); 
     let client = Client::new();
     let mut bodies = stream::iter(urls)
         .map(|url| {
@@ -72,7 +75,7 @@ pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64, co
     let mut is_first : u32 = 1; 
     while let Some(v) = bodies.next().await {
         let data = v.unwrap_or(Response { results : [].to_vec()});
-        println!("Found {} places.", data.results.len()); 
+        bar.inc(1);  
         for place in data.results {
             let string = serde_json::to_string(&place).unwrap();
             if is_first == 1 {
@@ -84,4 +87,5 @@ pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64, co
         }
     }
     outfile.write("]".as_bytes()).await.expect("Could not write to file.");    
+    bar.finish(); 
 }
