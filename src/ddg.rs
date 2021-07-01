@@ -50,7 +50,7 @@ async fn handle_error(e : reqwest::Error) -> Result<(), Error> {
 }
 
 #[tokio::main]
-pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64, concurrent_requests : usize) {
+pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64, concurrent_requests : usize) -> Result<(), tokio::io::Error> {
     let grids = grid::get_grids(&start_point, distance_miles, 5.);
     let mut urls  = Vec::new(); 
     
@@ -74,7 +74,13 @@ pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64, co
     outfile.write("[".as_bytes()).await.expect("Could not write to file."); 
     let mut is_first : u32 = 1; 
     while let Some(v) = bodies.next().await {
-        let data = v.unwrap_or(Response { results : [].to_vec()});
+        let data = match v {
+            Ok(data) => data, 
+            Err(e) => {
+                eprintln!("Failure: {}", e);
+                Response { results : [].to_vec()}
+            }
+        }; 
         bar.inc(1);  
         for place in data.results {
             let string = serde_json::to_string(&place).unwrap();
@@ -87,5 +93,6 @@ pub async fn query(q : &str, start_point : &Point<f64>, distance_miles : f64, co
         }
     }
     outfile.write("]".as_bytes()).await.expect("Could not write to file.");    
-    bar.finish(); 
+    bar.finish();
+    Ok(())
 }
