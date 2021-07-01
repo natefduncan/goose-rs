@@ -28,7 +28,7 @@ fn _miles(p1: &Point<f64>, p2: &Point<f64>) -> f64 {
 fn tl_br_from_center(center_point: &Point<f64>, miles: f64) -> [Coordinate<f64>; 2] {
     let bottom_center: Point<f64> = get_offset(center_point, miles / 2., Offset::Down);
     let bottom_left: Point<f64> = get_offset(&bottom_center, miles / 2., Offset::Left);
-    let bottom_right: Point<f64> = get_offset(&bottom_left, miles, Offset::Right); 
+    let bottom_right: Point<f64> = get_offset(&bottom_left, miles, Offset::Right);
     let top_left: Point<f64> = get_offset(&bottom_left, miles, Offset::Up);
     let br_coord: Coordinate<f64> = bottom_right.into();
     let tl_coord: Coordinate<f64> = top_left.into();
@@ -36,11 +36,15 @@ fn tl_br_from_center(center_point: &Point<f64>, miles: f64) -> [Coordinate<f64>;
 }
 
 fn rect_from_center(center_point: &Point<f64>, miles: f64) -> Rect<f64> {
-    let tl_br = tl_br_from_center(&center_point, miles); 
+    let tl_br = tl_br_from_center(&center_point, miles);
     Rect::new(tl_br[0], tl_br[1])
 }
 
-pub fn get_grids(center_point: &Point<f64>, grid_length: f64, rect_length: f64) -> Vec<[Coordinate<f64>; 2]> {
+pub fn get_grids(
+    center_point: &Point<f64>,
+    grid_length: f64,
+    rect_length: f64,
+) -> Vec<[Coordinate<f64>; 2]> {
     let mut output = Vec::new();
     // find top left start point.
     let left = get_offset(
