@@ -18,17 +18,32 @@ fn main() {
             .help("Sets your location (e.g. Dallas, TX).")
             .required(true)
             .index(2))
-        .arg(Arg::with_name("DISTANCE")
-            .help("Sets how far you want to seach in miles.")
-            .required(true)
+        .arg(Arg::with_name("SAVE")
+            .help("Sets your save location. Default is current directory.")
+            .required(false)
             .index(3))
+        .arg(Arg::with_name("DISTANCE")
+            .short("d")
+            .long("distance")
+            .value_name("DISTANCE")
+            .help("Set the search distance. Default is 10 miles.")
+            .takes_value(true))
+        .arg(Arg::with_name("FILE_TYPE")
+            .short("f")
+            .long("file_type")
+            .value_name("FILE_TYPE")
+            .help("Set the output file_type. Default is csv. Options: csv, json. ")
+            .takes_value(true))
         .get_matches();
 
     let query = matches.value_of("QUERY").expect("Unable to parse query");
     let location = matches.value_of("LOCATION").expect("Unable to parse location");
-    let distance = matches.value_of("DISTANCE").expect("Unable to parse distance"); 
+    let save = matches.value_of("SAVE").unwrap_or(".");
+    let distance = matches.value_of("DISTANCE").unwrap_or("10"); 
+    let file_type = matches.value_of("DISTANCE").unwrap_or("csv"); 
     let start_point = geocode::geocode(&location); 
     println!("Found coordinates for {}: {}, {}", location, start_point.lat(), start_point.lng()); 
     println!("Searching for {} within {} miles.", query, distance); 
     ddg::query(&query, &start_point, distance.parse::<f64>().unwrap()); 
+    
 }
