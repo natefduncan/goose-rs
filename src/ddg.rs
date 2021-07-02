@@ -1,3 +1,4 @@
+use super::files;
 use super::grid;
 use futures::{stream, StreamExt};
 use geo::Coordinate;
@@ -8,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::str;
 use tokio::io::AsyncWriteExt;
-use super::files; 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Coord {
@@ -64,8 +64,8 @@ pub async fn query(
             }
         })
         .buffer_unordered(concurrent_requests);
-    let mut output = Vec::new(); 
-    //Add response to outfile. 
+    let mut output = Vec::new();
+    //Add response to outfile.
     while let Some(v) = bodies.next().await {
         let mut data = match v {
             Ok(data) => data,
@@ -76,9 +76,9 @@ pub async fn query(
                 }
             }
         };
-        output.append(&mut data.results); 
+        output.append(&mut data.results);
         bar.inc(1); // Update progress bar
     }
     bar.finish();
-    output 
+    output
 }

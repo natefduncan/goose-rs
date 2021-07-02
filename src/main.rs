@@ -73,7 +73,7 @@ fn main() {
     );
     println!("Searching for {} within {} miles.", query, distance);
     let now = Instant::now();
-    let data : Vec<ddg::Place> = ddg::query(
+    let data: Vec<ddg::Place> = ddg::query(
         &query,
         &start_point,
         distance.parse::<f64>().unwrap(),
@@ -84,6 +84,5 @@ fn main() {
         files::output_to_csv(data, "output.csv").expect("Write to csv failed.");
     } else if file_type == "json" {
         files::output_to_json(data, "output.json").expect("Write to json failed.")
-    
     }
 }
