@@ -9,8 +9,8 @@ use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Coord {
-    latitude: f64,
-    longitude: f64,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -21,7 +21,6 @@ struct Response {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Place {
     address: Option<String>,
-    address_lines: Vec<String>,
     city: Option<String>,
     coordinates: Coord,
     display_phone: Option<String>,

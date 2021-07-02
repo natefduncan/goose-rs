@@ -1,13 +1,11 @@
 extern crate clap;
 use clap::{App, Arg};
-use std::time::{Instant};
+use std::time::Instant;
 
 mod ddg;
+mod files;
 mod geocode;
 mod grid;
-mod files; 
-mod convert;
-mod unwind_json; 
 
 fn main() {
     let matches = App::new("Goose")
@@ -45,7 +43,7 @@ fn main() {
                 .short("f")
                 .long("file-type")
                 .value_name("FILE-TYPE")
-                .help("Set the output file_type. Default is csv. Options: csv, json. ")
+                .help("Set the output file_type. Default is json. Options: csv, json. ")
                 .takes_value(true),
         )
         .arg(
@@ -53,7 +51,7 @@ fn main() {
                 .short("c")
                 .long("concurrency")
                 .value_name("CONCURRENCY")
-                .help("Set request concurrency. Default is 2.")
+                .help("Set request concurrency. Default is 1.")
                 .takes_value(true),
         )
         .get_matches();
@@ -65,7 +63,7 @@ fn main() {
     let save = matches.value_of("SAVE").unwrap_or(".");
     let distance = matches.value_of("DISTANCE").unwrap_or("10");
     let file_type = matches.value_of("FILE-TYPE").unwrap_or("json");
-    let concurrent_requests = matches.value_of("CONCURRENCY").unwrap_or("2");
+    let concurrent_requests = matches.value_of("CONCURRENCY").unwrap_or("1");
     let start_point = geocode::geocode(&location);
     println!(
         "Found coordinates for {}: {}, {}",
@@ -83,6 +81,6 @@ fn main() {
     );
     println!("Completed query in {} second.", now.elapsed().as_secs());
     if file_type == "csv" {
-        files::output_to_csv2(&save); 
+        files::output_to_csv(&save).expect("Write to csv failed.");
     }
 }

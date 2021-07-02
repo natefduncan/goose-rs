@@ -21,9 +21,9 @@ FLAGS:
     -V, --version    Prints version information
 
 OPTIONS:
-    -c, --concurrency <CONCURRENCY>    Set request concurrency. Default is 2.
+    -c, --concurrency <CONCURRENCY>    Set request concurrency. Default is 1.
     -d, --distance <DISTANCE>          Set the search distance. Default is 10 miles.
-    -f, --file_type <FILE_TYPE>        Set the output file_type. Default is csv. Options: csv, json.
+    -f, --file-type <FILE-TYPE>        Set the output file_type. Default is json. Options: csv, json. 
 
 ARGS:
     <QUERY>       Sets your search value (e.g. Restaurant, Park, etc).
