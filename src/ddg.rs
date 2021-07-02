@@ -5,7 +5,10 @@ use geo_types::Point;
 use indicatif::ProgressBar;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::io::Read;
+use std::str;
 use tokio::io::AsyncWriteExt;
+use super::files; 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Coord {
@@ -41,16 +44,17 @@ pub async fn query(
     start_point: &Point<f64>,
     distance_miles: f64,
     concurrent_requests: usize,
-) {
+) -> Vec<Place> {
     let grids = grid::get_grids(&start_point, distance_miles, 5.);
     let mut urls = Vec::new();
-
+    //Get URLs
     for g in grids {
         urls.push(get_url(q, g));
     }
     let bar_length: u64 = urls.len() as u64;
     let bar = ProgressBar::new(bar_length);
     let client = Client::new();
+    //Response stream
     let mut bodies = stream::iter(urls)
         .map(|url| {
             let client = &client;
@@ -60,17 +64,10 @@ pub async fn query(
             }
         })
         .buffer_unordered(concurrent_requests);
-
-    let mut outfile = tokio::fs::File::create("output.json")
-        .await
-        .expect("Failed to create file.");
-    outfile
-        .write("[".as_bytes())
-        .await
-        .expect("Could not write to file.");
-    let mut is_first: u32 = 1;
+    let mut output = Vec::new(); 
+    //Add response to outfile. 
     while let Some(v) = bodies.next().await {
-        let data = match v {
+        let mut data = match v {
             Ok(data) => data,
             Err(e) => {
                 eprintln!("Failure: {}", e);
@@ -79,26 +76,9 @@ pub async fn query(
                 }
             }
         };
-        bar.inc(1);
-        for place in data.results {
-            let string = serde_json::to_string(&place).unwrap();
-            if is_first == 1 {
-                is_first = 0;
-            } else {
-                outfile
-                    .write(",".as_bytes())
-                    .await
-                    .expect("Could not write to file.");
-            }
-            outfile
-                .write(string.as_bytes())
-                .await
-                .expect("Could not write to file.");
-        }
+        output.append(&mut data.results); 
+        bar.inc(1); // Update progress bar
     }
-    outfile
-        .write("]".as_bytes())
-        .await
-        .expect("Could not write to file.");
     bar.finish();
+    output 
 }
