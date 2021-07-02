@@ -5,6 +5,9 @@ use std::time::{Instant};
 mod ddg;
 mod geocode;
 mod grid;
+mod files; 
+mod convert;
+mod unwind_json; 
 
 fn main() {
     let matches = App::new("Goose")
@@ -38,10 +41,10 @@ fn main() {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("FILE_TYPE")
+            Arg::with_name("FILE-TYPE")
                 .short("f")
-                .long("file_type")
-                .value_name("FILE_TYPE")
+                .long("file-type")
+                .value_name("FILE-TYPE")
                 .help("Set the output file_type. Default is csv. Options: csv, json. ")
                 .takes_value(true),
         )
@@ -59,9 +62,9 @@ fn main() {
     let location = matches
         .value_of("LOCATION")
         .expect("Unable to parse location");
-    let _save = matches.value_of("SAVE").unwrap_or(".");
+    let save = matches.value_of("SAVE").unwrap_or(".");
     let distance = matches.value_of("DISTANCE").unwrap_or("10");
-    let _file_type = matches.value_of("FILE_TYPE").unwrap_or("csv");
+    let file_type = matches.value_of("FILE-TYPE").unwrap_or("json");
     let concurrent_requests = matches.value_of("CONCURRENCY").unwrap_or("2");
     let start_point = geocode::geocode(&location);
     println!(
@@ -79,4 +82,7 @@ fn main() {
         concurrent_requests.parse::<usize>().unwrap(),
     );
     println!("Completed query in {} second.", now.elapsed().as_secs());
+    if file_type == "csv" {
+        files::output_to_csv2(&save); 
+    }
 }

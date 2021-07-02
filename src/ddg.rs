@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct Coord {
+pub struct Coord {
     latitude: f64,
     longitude: f64,
 }
@@ -19,7 +19,7 @@ struct Response {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct Place {
+pub struct Place {
     address: Option<String>,
     address_lines: Vec<String>,
     city: Option<String>,

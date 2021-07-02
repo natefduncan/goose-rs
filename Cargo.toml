@@ -18,3 +18,5 @@ geocoding = { version = "*", default-features = false, features = ["rustls-tls"]
 clap = "2.33.3"
 csv = "1.1"
 indicatif = "0.16.2"
+json2csv = { git = "https://github.com/alexwennerberg/json2csv" } 
+rust-flatten-json = "0.1.0"
