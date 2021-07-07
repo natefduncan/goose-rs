@@ -1,6 +1,7 @@
 extern crate clap;
 use clap::{App, Arg};
 use std::time::Instant;
+use console::Term; 
 
 mod ddg;
 mod files;
@@ -65,13 +66,13 @@ fn main() {
     let file_type = matches.value_of("FILE-TYPE").unwrap_or("json");
     let concurrent_requests = matches.value_of("CONCURRENCY").unwrap_or("1");
     let start_point = geocode::geocode(&location);
-    println!(
+    /*println!(
         "Found coordinates for {}: {}, {}",
         location,
         start_point.lat(),
         start_point.lng()
-    );
-    println!("Searching for {} within {} miles.", query, distance);
+    );*/
+    //println!("Searching for {} within {} miles.", query, distance);
     let now = Instant::now();
     let data: Vec<ddg::Place> = ddg::query(
         &query,
@@ -79,10 +80,10 @@ fn main() {
         distance.parse::<f64>().unwrap(),
         concurrent_requests.parse::<usize>().unwrap(),
     );
-    println!("Completed query in {} second.", now.elapsed().as_secs());
+    //println!("Completed query in {} second.", now.elapsed().as_secs());
     if file_type == "csv" {
-        files::output_to_csv(data, "output.csv").expect("Write to csv failed.");
+        files::output_as_csv(data).expect("Write to csv failed.");
     } else if file_type == "json" {
-        files::output_to_json(data, "output.json").expect("Write to json failed.")
+        files::output_as_json(data).expect("Write to json failed.")
     }
 }

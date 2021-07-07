@@ -18,3 +18,4 @@ geocoding = { version = "*", default-features = false, features = ["rustls-tls"]
 clap = "2.33.3"
 csv = "1.1"
 indicatif = "0.16.2"
+console = "0.14.1"

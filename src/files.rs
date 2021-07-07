@@ -2,15 +2,15 @@ use super::ddg;
 use csv;
 use serde_json;
 use std::fs::File;
-use std::io::Write;
+use std::io::{self, Write};
 use std::str;
 
-pub fn output_to_json(data: Vec<ddg::Place>, file_name: &str) -> Result<(), std::io::Error> {
-    //JSON outfile
-    let mut file = File::create(&file_name).expect("Failed to create outfile.");
+pub fn output_as_json(data: Vec<ddg::Place>) -> Result<(), std::io::Error> {
+    //JSON output
+    let mut output = String::new(); 
+    //let mut file = File::create(&file_name).expect("Failed to create outfile.");
     //Start of JSON file.
-    file.write("[".as_bytes())
-        .expect("Could not write to file.");
+    output.push_str("[");
     let mut is_first: u32 = 1;
     for place in data {
         let string = serde_json::to_string(&place).unwrap();
@@ -18,24 +18,22 @@ pub fn output_to_json(data: Vec<ddg::Place>, file_name: &str) -> Result<(), std:
             is_first = 0;
         } else {
             //Write comma if not first.
-            file.write(",".as_bytes())
-                .expect("Could not write to file.");
+            output.push_str(",");
         }
         //Write JSON string.
-        file.write(string.as_bytes())
-            .expect("Could not write to file.");
+        output.push_str(&string);
     }
     //End of file.
-    file.write("]".as_bytes())
-        .expect("Could not write to file.");
+    output.push_str("]");
+    io::stdout().write_all(output.as_bytes());
     Ok(())
 }
 
-pub fn output_to_csv(data: Vec<ddg::Place>, file_name: &str) -> Result<(), std::io::Error> {
-    let file = File::create(&file_name).expect("Failed to create outfile.");
+pub fn output_as_csv(data: Vec<ddg::Place>) -> Result<(), std::io::Error> {
+    //let file = File::create(&file_name).expect("Failed to create outfile.");
     let mut wtr = csv::WriterBuilder::new()
         .has_headers(false)
-        .from_writer(file);
+        .from_writer(io::stdout());
     wtr.write_record(&[
         "address",
         "city",
