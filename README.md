@@ -9,12 +9,12 @@
 `goose --help`
 
 ```
-Goose 1.0
+Goose 0.1.1
 Nate D.
 Query Duck Duck Go to get location data.
 
 USAGE:
-    goose [OPTIONS] <QUERY> <LOCATION> [SAVE]
+    goose [OPTIONS] <QUERY> <LOCATION>
 
 FLAGS:
     -h, --help       Prints help information
@@ -26,7 +26,7 @@ OPTIONS:
     -f, --file-type <FILE-TYPE>        Set the output file_type. Default is json. Options: csv, json. 
 
 ARGS:
-    <QUERY>       Sets your search value (e.g. Restaurant, Park, etc).
+    <QUERY>       Sets your search value (e.g. Restaurant, Park, etc). Multiple queries in the same location can be
+                  separated by comma.
     <LOCATION>    Sets your location (e.g. Dallas, TX).
-    <SAVE>        Sets your save location. Default is current directory.
 ```
