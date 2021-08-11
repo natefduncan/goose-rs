@@ -1,9 +1,7 @@
 use super::ddg;
 use csv;
 use serde_json;
-use std::fs::File;
 use std::io::{self, Write};
-use std::str;
 
 pub fn output_as_json(data: Vec<ddg::Place>) -> Result<(), std::io::Error> {
     //JSON output
@@ -25,7 +23,7 @@ pub fn output_as_json(data: Vec<ddg::Place>) -> Result<(), std::io::Error> {
     }
     //End of file.
     output.push_str("]");
-    io::stdout().write_all(output.as_bytes());
+    io::stdout().write_all(output.as_bytes()).expect("could not write");
     Ok(())
 }
 
@@ -44,6 +42,7 @@ pub fn output_as_csv(data: Vec<ddg::Place>) -> Result<(), std::io::Error> {
         "id",
         "name",
         "phone",
+        "search"
     ])?;
     for p in data {
         wtr.serialize(p)?;
