@@ -1,4 +1,3 @@
-use super::files;
 use super::grid;
 use futures::{stream, StreamExt};
 use geo::Coordinate;
@@ -6,9 +5,7 @@ use geo_types::Point;
 use indicatif::ProgressBar;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
 use std::str;
-use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Coord {
@@ -31,6 +28,7 @@ pub struct Place {
     id: Option<String>,
     name: Option<String>,
     phone: Option<String>,
+    pub search: Option<String>
 }
 
 fn get_url(q: &str, g: [Coordinate<f64>; 2]) -> String {
