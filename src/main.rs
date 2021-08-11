@@ -8,7 +8,7 @@ mod grid;
 
 fn main() {
     let matches = App::new("Goose")
-        .version("1.0")
+        .version("0.1.1")
         .author("Nate D.")
         .about("Query Duck Duck Go to get location data.")
         .arg(
