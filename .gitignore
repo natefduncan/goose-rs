@@ -16,3 +16,4 @@ Cargo.lock
 output.json
 output.csv
 *.csv
+*.html
