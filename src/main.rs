@@ -1,4 +1,5 @@
 extern crate clap;
+use anyhow::{anyhow, Result};
 use clap::{App, Arg};
 
 mod ddg;
@@ -8,6 +9,13 @@ mod grid;
 
 #[tokio::main]
 async fn main() {
+    if let Err(e) = run().await {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<()> {
     let matches = App::new("Goose")
         .version("0.1.1")
         .author("Nate D.")
@@ -62,9 +70,18 @@ async fn main() {
     let distance = matches.value_of("DISTANCE").unwrap_or("10");
     let file_type = matches.value_of("FILE-TYPE").unwrap_or("json");
     let concurrent_requests = matches.value_of("CONCURRENCY").unwrap_or("1");
-    let distance_val = distance.parse::<f64>().unwrap();
-    let concurrency_val = concurrent_requests.parse::<usize>().unwrap();
-    let start_point = geocode::geocode(&location);
+
+    let distance_val = distance.parse::<f64>().map_err(|_| {
+        anyhow!("Invalid --distance '{}': must be a number", distance)
+    })?;
+    let concurrency_val = concurrent_requests.parse::<usize>().map_err(|_| {
+        anyhow!(
+            "Invalid --concurrency '{}': must be a positive integer",
+            concurrent_requests
+        )
+    })?;
+
+    let start_point = geocode::geocode(location)?;
 
     let futures: Vec<_> = queries
         .iter()
@@ -89,8 +106,10 @@ async fn main() {
     }
 
     if file_type == "csv" {
-        files::output_as_csv(data).expect("Write to csv failed.");
+        files::output_as_csv(data)?;
     } else if file_type == "json" {
-        files::output_as_json(data).expect("Write to json failed.")
+        files::output_as_json(data)?;
     }
+
+    Ok(())
 }
