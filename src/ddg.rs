@@ -7,7 +7,6 @@ use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::str;
 use std::time::Duration;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
