@@ -8,6 +8,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::str;
+use std::time::Duration;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Coord {
@@ -52,7 +53,10 @@ pub async fn query(
     }
     let bar_length: u64 = urls.len() as u64;
     let bar = ProgressBar::new(bar_length);
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .expect("Failed to build HTTP client");
     //Response stream
     let mut bodies = stream::iter(urls)
         .map(|url| {
