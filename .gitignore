@@ -17,3 +17,6 @@ output.json
 output.csv
 *.csv
 *.html
+.ralph
+.ralph
+.ralph/diagnostics/logs/ralph-2026-06-08T10-02-22-445-412002.log
