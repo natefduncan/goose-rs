@@ -46,7 +46,8 @@ async fn run() -> Result<()> {
                 .long("file-type")
                 .value_name("FILE-TYPE")
                 .help("Set the output file_type. Default is json. Options: csv, json. ")
-                .takes_value(true),
+                .takes_value(true)
+                .possible_values(&["csv", "json"]),
         )
         .arg(
             Arg::with_name("CONCURRENCY")
