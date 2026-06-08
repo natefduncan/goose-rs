@@ -1,5 +1,6 @@
 //Lat = Y Long = X
 use geo::algorithm::geodesic_distance::GeodesicDistance;
+use geo::algorithm::haversine_destination::HaversineDestination;
 use geo::{Coordinate, Point, Rect};
 
 enum Offset {
@@ -82,26 +83,12 @@ pub fn get_grids(
 }
 
 fn get_offset(start_point: &Point<f64>, miles: f64, offset: Offset) -> Point<f64> {
-    let miles_to_degrees: f64 = 64.52626802;
-    let degrees = miles / miles_to_degrees;
-    let mut lat_translate: f64 = 0.;
-    let mut lng_translate: f64 = 0.;
-    match offset {
-        Offset::Up => lat_translate = lat_translate + degrees,
-        Offset::Down => {
-            lat_translate = lat_translate - degrees;
-        }
-        Offset::Right => {
-            lng_translate = lng_translate + degrees;
-        }
-        Offset::Left => {
-            lng_translate = lat_translate - degrees;
-        }
-    }
-    let output: Point<f64> = (
-        start_point.lng() + lng_translate,
-        start_point.lat() + lat_translate,
-    )
-        .into();
-    return output;
+    let meters = miles * 1609.344;
+    let bearing = match offset {
+        Offset::Up => 0.0,
+        Offset::Right => 90.0,
+        Offset::Down => 180.0,
+        Offset::Left => 270.0,
+    };
+    start_point.haversine_destination(bearing, meters)
 }
