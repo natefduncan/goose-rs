@@ -3,6 +3,7 @@ use futures::{stream, StreamExt};
 use geo::Coordinate;
 use geo_types::Point;
 use indicatif::ProgressBar;
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::str;
@@ -32,8 +33,8 @@ pub struct Place {
 }
 
 fn get_url(q: &str, g: [Coordinate<f64>; 2]) -> String {
-    let url : String = format!("https://duckduckgo.com/local.js?q={}&tg=maps_places&rt=D&mkexp=b&is_requery=1&bbox_tl={},{}&bbox_br={},{}&strict_bbox=1&wiamr=a&nyexp=b", q, g[0].y, g[0].x, g[1].y, g[1].x);
-    return url;
+    let encoded_q = utf8_percent_encode(q, NON_ALPHANUMERIC).to_string();
+    format!("https://duckduckgo.com/local.js?q={}&tg=maps_places&rt=D&mkexp=b&is_requery=1&bbox_tl={},{}&bbox_br={},{}&strict_bbox=1&wiamr=a&nyexp=b", encoded_q, g[0].y, g[0].x, g[1].y, g[1].x)
 }
 
 pub async fn query(

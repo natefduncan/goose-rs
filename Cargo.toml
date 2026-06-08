@@ -20,3 +20,4 @@ csv = "1.1"
 anyhow = "1"
 indicatif = "0.16.2"
 console = { version = "0.16.0", features = ["std"] }
+percent-encoding = "2"
