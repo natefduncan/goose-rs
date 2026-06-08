@@ -6,6 +6,7 @@ use indicatif::ProgressBar;
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::str;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -78,5 +79,21 @@ pub async fn query(
         bar.inc(1); // Update progress bar
     }
     bar.finish();
+
+    let mut seen_ids: HashSet<String> = HashSet::new();
+    let mut seen_fallback: HashSet<(String, String, String)> = HashSet::new();
+    output.retain(|place| {
+        if let Some(id) = &place.id {
+            seen_ids.insert(id.clone())
+        } else {
+            let key = (
+                place.name.clone().unwrap_or_default(),
+                place.address.clone().unwrap_or_default(),
+                place.city.clone().unwrap_or_default(),
+            );
+            seen_fallback.insert(key)
+        }
+    });
+
     output
 }
