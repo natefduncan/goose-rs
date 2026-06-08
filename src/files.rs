@@ -2,23 +2,10 @@ use super::ddg;
 use anyhow::Result;
 use csv;
 use serde_json;
-use std::io::{self, Write};
+use std::io;
 
 pub fn output_as_json(data: Vec<ddg::Place>) -> Result<()> {
-    let mut output = String::new();
-    output.push_str("[");
-    let mut is_first: u32 = 1;
-    for place in data {
-        let string = serde_json::to_string(&place)?;
-        if is_first == 1 {
-            is_first = 0;
-        } else {
-            output.push_str(",");
-        }
-        output.push_str(&string);
-    }
-    output.push_str("]");
-    io::stdout().write_all(output.as_bytes())?;
+    serde_json::to_writer(io::stdout(), &data)?;
     Ok(())
 }
 
