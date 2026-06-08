@@ -45,7 +45,8 @@ pub async fn query(
     distance_miles: f64,
     concurrent_requests: usize,
 ) -> Vec<Place> {
-    let grids = grid::get_grids(&start_point, distance_miles, 5.);
+    let cell_size = (distance_miles / 2.0).clamp(1.0, 20.0);
+    let grids = grid::get_grids(&start_point, distance_miles, cell_size);
     let mut urls = Vec::new();
     //Get URLs
     for g in grids {
