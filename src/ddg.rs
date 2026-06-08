@@ -36,7 +36,6 @@ fn get_url(q: &str, g: [Coordinate<f64>; 2]) -> String {
     return url;
 }
 
-#[tokio::main]
 pub async fn query(
     q: &str,
     start_point: &Point<f64>,
