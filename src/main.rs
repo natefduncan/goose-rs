@@ -1,10 +1,14 @@
 use anyhow::Result;
 use clap::Parser;
+use pace::Pacer;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 mod ddg;
 mod files;
 mod geocode;
 mod grid;
+mod pace;
 
 #[derive(Parser)]
 #[command(
@@ -28,9 +32,17 @@ struct Args {
     #[arg(short = 'f', long = "file-type", value_parser = ["csv", "json"], default_value = "json")]
     file_type: String,
 
-    /// Set request concurrency.
-    #[arg(short, long, default_value_t = 1usize)]
+    /// Maximum requests in flight. Request *rate* adapts to DDG's limit automatically.
+    #[arg(short, long, default_value_t = 16usize)]
     concurrency: usize,
+
+    /// Never send more than this many requests per second.
+    #[arg(long, default_value_t = 20.0)]
+    max_rate: f64,
+
+    /// Smallest cell (miles) to subdivide to when a cell returns a full page.
+    #[arg(long, default_value_t = 0.25)]
+    min_cell: f64,
 }
 
 #[tokio::main]
@@ -52,21 +64,13 @@ async fn run() -> Result<()> {
 
     let start_point = geocode::geocode(&args.location)?;
 
-    let futures: Vec<_> = queries
-        .iter()
-        .map(|q| {
-            let q = q.clone();
-            let sp = start_point.clone();
-            let distance = args.distance;
-            let concurrency = args.concurrency;
-            async move {
-                let results = ddg::query(&q, &sp, distance, concurrency).await;
-                (q, results)
-            }
-        })
-        .collect();
-
-    let all_results = futures::future::join_all(futures).await;
+    // One pacer for all queries so they share the same rate limit.
+    let pacer = Arc::new(Mutex::new(Pacer::new(2.0, args.max_rate, Instant::now())));
+    let mut all_results = Vec::new();
+    for q in queries {
+        let results = ddg::query(&q, &start_point, args.distance, args.concurrency, args.min_cell, &pacer).await;
+        all_results.push((q, results));
+    }
 
     let mut data: Vec<ddg::Place> = vec![];
     for (query_term, temp) in all_results {

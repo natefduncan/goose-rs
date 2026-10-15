@@ -13,20 +13,9 @@ pub fn output_as_csv(data: Vec<ddg::Place>) -> Result<()> {
     let mut wtr = csv::WriterBuilder::new()
         .has_headers(false)
         .from_writer(io::stdout());
-    wtr.write_record(&[
-        "address",
-        "city",
-        "latitude",
-        "longitude",
-        "display_phone",
-        "engine",
-        "id",
-        "name",
-        "phone",
-        "search",
-    ])?;
+    wtr.write_record(&ddg::CSV_HEADER)?;
     for p in data {
-        wtr.serialize(p)?;
+        wtr.write_record(p.csv_row())?;
     }
     wtr.flush()?;
     Ok(())

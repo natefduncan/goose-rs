@@ -1,13 +1,16 @@
 use super::grid;
-use futures::{stream, StreamExt};
+use super::pace::Pacer;
+use futures::stream::{FuturesUnordered, StreamExt};
 use geo::Coordinate;
 use geo_types::Point;
 use indicatif::ProgressBar;
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::time::Duration;
+use serde_json::Value;
+use std::collections::{HashSet, VecDeque};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Coord {
@@ -30,59 +33,221 @@ pub struct Place {
     id: Option<String>,
     name: Option<String>,
     phone: Option<String>,
+    // Kept as raw JSON: DDG's types for these vary by provider, and a type
+    // mismatch would otherwise drop the whole page of results.
+    #[serde(default)]
+    ddg_category: Option<Value>,
+    #[serde(default)]
+    website: Option<Value>,
+    #[serde(default)]
+    rating: Option<Value>,
+    #[serde(default)]
+    reviews: Option<Value>,
+    #[serde(default)]
+    price: Option<Value>,
+    #[serde(default)]
+    hours: Option<Value>,
+    #[serde(default)]
+    timezone: Option<Value>,
+    #[serde(default)]
+    closed: Option<Value>,
+    #[serde(default)]
+    country_code: Option<Value>,
+    #[serde(default)]
+    facebook_id: Option<Value>,
+    #[serde(default)]
+    instagram_id: Option<Value>,
+    #[serde(default)]
+    twitter_id: Option<Value>,
+    #[serde(default)]
+    yelp_business_id: Option<Value>,
     pub search: Option<String>
 }
+
+fn cell(v: &Option<Value>) -> String {
+    match v {
+        None | Some(Value::Null) => String::new(),
+        Some(Value::String(s)) => s.clone(),
+        Some(other) => other.to_string(),
+    }
+}
+
+impl Place {
+    /// One CSV row, in the order of `CSV_HEADER`. Nested values (hours) are JSON-encoded.
+    pub fn csv_row(&self) -> Vec<String> {
+        let opt = |s: &Option<String>| s.clone().unwrap_or_default();
+        vec![
+            opt(&self.address),
+            opt(&self.city),
+            self.coordinates.latitude.map(|v| v.to_string()).unwrap_or_default(),
+            self.coordinates.longitude.map(|v| v.to_string()).unwrap_or_default(),
+            opt(&self.display_phone),
+            opt(&self.engine),
+            opt(&self.id),
+            opt(&self.name),
+            opt(&self.phone),
+            opt(&self.search),
+            cell(&self.ddg_category),
+            cell(&self.website),
+            cell(&self.rating),
+            cell(&self.reviews),
+            cell(&self.price),
+            cell(&self.hours),
+            cell(&self.timezone),
+            cell(&self.closed),
+            cell(&self.country_code),
+            cell(&self.facebook_id),
+            cell(&self.instagram_id),
+            cell(&self.twitter_id),
+            cell(&self.yelp_business_id),
+        ]
+    }
+}
+
+pub const CSV_HEADER: [&str; 23] = [
+    "address", "city", "latitude", "longitude", "display_phone", "engine", "id", "name",
+    "phone", "search", "ddg_category", "website", "rating", "reviews", "price", "hours",
+    "timezone", "closed", "country_code", "facebook_id", "instagram_id", "twitter_id",
+    "yelp_business_id",
+];
 
 fn get_url(q: &str, g: [Coordinate<f64>; 2]) -> String {
     let encoded_q = utf8_percent_encode(q, NON_ALPHANUMERIC).to_string();
     format!("https://duckduckgo.com/local.js?q={}&tg=maps_places&rt=D&mkexp=b&is_requery=1&bbox_tl={},{}&bbox_br={},{}&strict_bbox=1&wiamr=a&nyexp=b", encoded_q, g[0].y, g[0].x, g[1].y, g[1].x)
 }
 
+type Cell = [Coordinate<f64>; 2];
+
+/// DDG returns at most ~19 places per request. A cell that comes back this
+/// full has probably been truncated, so it is split into four and re-queried.
+const SPLIT_AT: usize = 15;
+const MILES_PER_DEGREE_LAT: f64 = 69.0;
+const MAX_ATTEMPTS: u32 = 10;
+
+fn split(c: Cell) -> [Cell; 4] {
+    let (mx, my) = ((c[0].x + c[1].x) / 2., (c[0].y + c[1].y) / 2.);
+    let p = |x, y| Coordinate { x, y };
+    [
+        [p(c[0].x, c[0].y), p(mx, my)],
+        [p(mx, c[0].y), p(c[1].x, my)],
+        [p(c[0].x, my), p(mx, c[1].y)],
+        [p(mx, my), p(c[1].x, c[1].y)],
+    ]
+}
+
+fn cell_miles(c: Cell) -> f64 {
+    (c[0].y - c[1].y).abs() * MILES_PER_DEGREE_LAT
+}
+
+enum Fetched {
+    Places(Vec<Place>),
+    /// Rate limited, blocked, or timed out: slow down and retry.
+    Throttled(Option<Duration>),
+    /// Not worth retrying.
+    Failed(String),
+}
+
+async fn fetch_cell(client: &Client, q: &str, cell: Cell) -> Fetched {
+    let resp = match client.get(get_url(q, cell)).send().await {
+        Ok(r) => r,
+        Err(e) if e.is_timeout() || e.is_connect() => return Fetched::Throttled(None),
+        Err(e) => return Fetched::Failed(e.to_string()),
+    };
+    let status = resp.status();
+    if status.as_u16() == 429 || status.as_u16() == 403 || status.is_server_error() {
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(Duration::from_secs);
+        return Fetched::Throttled(retry_after);
+    }
+    if !status.is_success() {
+        return Fetched::Failed(format!("HTTP {}", status));
+    }
+    // A 200 that isn't the expected JSON is almost always a block/captcha page.
+    match resp.json::<Response>().await {
+        Ok(r) => Fetched::Places(r.results),
+        Err(_) => Fetched::Throttled(None),
+    }
+}
+
+/// Fetch every place for `q` in the square of side `distance_miles` around
+/// `start_point`. Cells that return a full page are split until they are
+/// smaller than `min_cell_miles`. Request starts are paced by `pacer`, which
+/// is shared across queries and adapts to the server's rate limit;
+/// `max_in_flight` only bounds memory/sockets.
 pub async fn query(
     q: &str,
     start_point: &Point<f64>,
     distance_miles: f64,
-    concurrent_requests: usize,
+    max_in_flight: usize,
+    min_cell_miles: f64,
+    pacer: &Arc<Mutex<Pacer>>,
 ) -> Vec<Place> {
     let cell_size = (distance_miles / 2.0).clamp(1.0, 20.0);
-    let grids = grid::get_grids(&start_point, distance_miles, cell_size);
-    let mut urls = Vec::new();
-    //Get URLs
-    for g in grids {
-        urls.push(get_url(q, g));
-    }
-    let bar_length: u64 = urls.len() as u64;
-    let bar = ProgressBar::new(bar_length);
+    let mut queue: VecDeque<(Cell, u32)> = grid::get_grids(start_point, distance_miles, cell_size)
+        .into_iter()
+        .map(|c| (c, 0))
+        .collect();
+    let bar = ProgressBar::new_spinner();
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
         .build()
         .expect("Failed to build HTTP client");
-    //Response stream
-    let mut bodies = stream::iter(urls)
-        .map(|url| {
-            let client = &client;
-            async move {
-                let resp = client.get(url).send().await?;
-                resp.json::<Response>().await
+
+    let mut output: Vec<Place> = Vec::new();
+    let mut in_flight = FuturesUnordered::new();
+    let (mut requests, mut throttles, mut failures) = (0u64, 0u64, 0u64);
+
+    loop {
+        while in_flight.len() < max_in_flight.max(1) {
+            let Some((cell, attempt)) = queue.pop_front() else { break };
+            let (client, pacer) = (&client, pacer);
+            in_flight.push(async move {
+                let slot = pacer.lock().unwrap().reserve(Instant::now());
+                tokio::time::sleep_until(slot.into()).await;
+                let started = Instant::now();
+                (cell, attempt, started, fetch_cell(client, q, cell).await)
+            });
+        }
+        let Some((cell, attempt, started, result)) = in_flight.next().await else { break };
+        requests += 1;
+        match result {
+            Fetched::Places(places) => {
+                pacer.lock().unwrap().on_success();
+                if places.len() >= SPLIT_AT && cell_miles(cell) / 2. >= min_cell_miles {
+                    queue.extend(split(cell).iter().map(|&c| (c, 0)));
+                }
+                output.extend(places);
             }
-        })
-        .buffer_unordered(concurrent_requests);
-    let mut output = Vec::new();
-    //Add response to outfile.
-    while let Some(v) = bodies.next().await {
-        let mut data = match v {
-            Ok(data) => data,
-            Err(e) => {
-                eprintln!("Failure: {}", e);
-                Response {
-                    results: [].to_vec(),
+            Fetched::Throttled(retry_after) => {
+                throttles += 1;
+                pacer.lock().unwrap().on_throttle(started, Instant::now(), retry_after);
+                if attempt + 1 < MAX_ATTEMPTS {
+                    queue.push_back((cell, attempt + 1));
+                } else {
+                    failures += 1;
+                    eprintln!("Giving up on a cell after {} throttled attempts", MAX_ATTEMPTS);
                 }
             }
-        };
-        output.append(&mut data.results);
-        bar.inc(1); // Update progress bar
+            Fetched::Failed(e) => {
+                failures += 1;
+                eprintln!("Failure: {}", e);
+            }
+        }
+        bar.set_message(format!(
+            "{}: {} requests, {} places, {} queued, {:.1} req/s, {} throttled, {} failed",
+            q, requests, output.len(), queue.len() + in_flight.len(),
+            pacer.lock().unwrap().rate(), throttles, failures
+        ));
+        bar.tick();
     }
     bar.finish();
+    if failures > 0 {
+        eprintln!("WARNING: {} cell(s) for '{}' could not be fetched; results are incomplete", failures, q);
+    }
 
     let mut seen_ids: HashSet<String> = HashSet::new();
     let mut seen_fallback: HashSet<(String, String, String)> = HashSet::new();
@@ -100,4 +265,19 @@ pub async fn query(
     });
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_quarters_the_cell_exactly() {
+        let c: Cell = [Coordinate { x: 0., y: 4. }, Coordinate { x: 4., y: 0. }];
+        let q = split(c);
+        assert_eq!(q[0], [Coordinate { x: 0., y: 4. }, Coordinate { x: 2., y: 2. }]);
+        assert_eq!(q[3], [Coordinate { x: 2., y: 2. }, Coordinate { x: 4., y: 0. }]);
+        let area: f64 = q.iter().map(|c| (c[1].x - c[0].x) * (c[0].y - c[1].y)).sum();
+        assert_eq!(area, 16.);
+    }
 }
