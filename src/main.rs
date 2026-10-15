@@ -40,8 +40,8 @@ struct Args {
     #[arg(long, default_value_t = 20.0)]
     max_rate: f64,
 
-    /// Smallest cell (miles) to subdivide to when a cell returns a full page.
-    #[arg(long, default_value_t = 0.25)]
+    /// Smallest cell (miles) to subdivide to while splitting keeps finding new places.
+    #[arg(long, default_value_t = 0.5)]
     min_cell: f64,
 }
 

@@ -118,11 +118,9 @@ fn get_url(q: &str, g: [Coordinate<f64>; 2]) -> String {
 
 type Cell = [Coordinate<f64>; 2];
 
-/// DDG returns at most ~19 places per request. A cell that comes back this
-/// full has probably been truncated, so it is split into four and re-queried.
-const SPLIT_AT: usize = 15;
-const MILES_PER_DEGREE_LAT: f64 = 69.0;
+/// How many times a throttled cell is retried before it is abandoned.
 const MAX_ATTEMPTS: u32 = 10;
+const MILES_PER_DEGREE_LAT: f64 = 69.0;
 
 fn split(c: Cell) -> [Cell; 4] {
     let (mx, my) = ((c[0].x + c[1].x) / 2., (c[0].y + c[1].y) / 2.);
@@ -173,11 +171,40 @@ async fn fetch_cell(client: &Client, q: &str, cell: Cell) -> Fetched {
     }
 }
 
+fn place_key(p: &Place) -> String {
+    match &p.id {
+        Some(id) => id.clone(),
+        None => format!(
+            "{}|{}|{}",
+            p.name.clone().unwrap_or_default(),
+            p.address.clone().unwrap_or_default(),
+            p.city.clone().unwrap_or_default()
+        ),
+    }
+}
+
+/// The four children of one cell, collected until all have reported.
+struct Group {
+    parent: HashSet<String>,
+    kids: Vec<(Cell, HashSet<String>)>,
+    remaining: usize,
+}
+
+/// DDG's page size is not a reliable truncation signal (pages of 13, 15, 16
+/// and 19 all occur in truncated cells), so instead of guessing a threshold we
+/// ask whether splitting a cell revealed anything its parent page didn't have.
+/// If the children together found places the parent missed, the parent was
+/// truncated and its children may be too; if not, the parent was complete.
+fn splitting_revealed_more(parent: &HashSet<String>, kids: &[(Cell, HashSet<String>)]) -> bool {
+    kids.iter().any(|(_, ids)| ids.iter().any(|id| !parent.contains(id)))
+}
+
 /// Fetch every place for `q` in the square of side `distance_miles` around
-/// `start_point`. Cells that return a full page are split until they are
-/// smaller than `min_cell_miles`. Request starts are paced by `pacer`, which
-/// is shared across queries and adapts to the server's rate limit;
-/// `max_in_flight` only bounds memory/sockets.
+/// `start_point`. Each starting cell is split once; its children are split
+/// again only while splitting keeps revealing new places (see
+/// `splitting_revealed_more`), down to `min_cell_miles`. Request starts are
+/// paced by `pacer`, which is shared across queries and adapts to the server's
+/// rate limit; `max_in_flight` only bounds memory/sockets.
 pub async fn query(
     q: &str,
     start_point: &Point<f64>,
@@ -187,10 +214,13 @@ pub async fn query(
     pacer: &Arc<Mutex<Pacer>>,
 ) -> Vec<Place> {
     let cell_size = (distance_miles / 2.0).clamp(1.0, 20.0);
-    let mut queue: VecDeque<(Cell, u32)> = grid::get_grids(start_point, distance_miles, cell_size)
-        .into_iter()
-        .map(|c| (c, 0))
-        .collect();
+    // (cell, attempt, group the cell belongs to; None for a starting cell)
+    let mut queue: VecDeque<(Cell, u32, Option<usize>)> =
+        grid::get_grids(start_point, distance_miles, cell_size)
+            .into_iter()
+            .map(|c| (c, 0, None))
+            .collect();
+    let mut groups: Vec<Group> = Vec::new();
     let bar = ProgressBar::new_spinner();
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
@@ -201,40 +231,79 @@ pub async fn query(
     let mut in_flight = FuturesUnordered::new();
     let (mut requests, mut throttles, mut failures) = (0u64, 0u64, 0u64);
 
+    // Queue the four children of `cell` as a new group.
+    fn descend(
+        cell: Cell,
+        ids: HashSet<String>,
+        groups: &mut Vec<Group>,
+        queue: &mut VecDeque<(Cell, u32, Option<usize>)>,
+    ) {
+        groups.push(Group { parent: ids, kids: Vec::new(), remaining: 4 });
+        let g = groups.len() - 1;
+        queue.extend(split(cell).iter().map(|&c| (c, 0, Some(g))));
+    }
+
     loop {
         while in_flight.len() < max_in_flight.max(1) {
-            let Some((cell, attempt)) = queue.pop_front() else { break };
+            let Some((cell, attempt, group)) = queue.pop_front() else { break };
             let (client, pacer) = (&client, pacer);
             in_flight.push(async move {
                 let slot = pacer.lock().unwrap().reserve(Instant::now());
                 tokio::time::sleep_until(slot.into()).await;
                 let started = Instant::now();
-                (cell, attempt, started, fetch_cell(client, q, cell).await)
+                (cell, attempt, group, started, fetch_cell(client, q, cell).await)
             });
         }
-        let Some((cell, attempt, started, result)) = in_flight.next().await else { break };
+        let Some((cell, attempt, group, started, result)) = in_flight.next().await else { break };
         requests += 1;
+        // Some(ids) when the cell is finished (fetched or abandoned).
+        let mut finished: Option<HashSet<String>> = None;
         match result {
             Fetched::Places(places) => {
                 pacer.lock().unwrap().on_success();
-                if places.len() >= SPLIT_AT && cell_miles(cell) / 2. >= min_cell_miles {
-                    queue.extend(split(cell).iter().map(|&c| (c, 0)));
-                }
+                finished = Some(places.iter().map(place_key).collect());
                 output.extend(places);
             }
             Fetched::Throttled(retry_after) => {
                 throttles += 1;
                 pacer.lock().unwrap().on_throttle(started, Instant::now(), retry_after);
                 if attempt + 1 < MAX_ATTEMPTS {
-                    queue.push_back((cell, attempt + 1));
+                    queue.push_back((cell, attempt + 1, group));
                 } else {
                     failures += 1;
                     eprintln!("Giving up on a cell after {} throttled attempts", MAX_ATTEMPTS);
+                    finished = Some(HashSet::new());
                 }
             }
             Fetched::Failed(e) => {
                 failures += 1;
                 eprintln!("Failure: {}", e);
+                finished = Some(HashSet::new());
+            }
+        }
+        if let Some(ids) = finished {
+            let can_split = cell_miles(cell) / 2. >= min_cell_miles;
+            match group {
+                // Starting cells are always split once if they found anything.
+                None => {
+                    if !ids.is_empty() && can_split {
+                        descend(cell, ids, &mut groups, &mut queue);
+                    }
+                }
+                Some(g) => {
+                    groups[g].kids.push((cell, ids));
+                    groups[g].remaining -= 1;
+                    if groups[g].remaining == 0 {
+                        let kids = std::mem::take(&mut groups[g].kids);
+                        if can_split && splitting_revealed_more(&groups[g].parent, &kids) {
+                            for (c, ids) in kids {
+                                if !ids.is_empty() {
+                                    descend(c, ids, &mut groups, &mut queue);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         bar.set_message(format!(
@@ -245,25 +314,13 @@ pub async fn query(
         bar.tick();
     }
     bar.finish();
+    eprintln!("{}: {} requests, {} throttled, {} failed", q, requests, throttles, failures);
     if failures > 0 {
         eprintln!("WARNING: {} cell(s) for '{}' could not be fetched; results are incomplete", failures, q);
     }
 
-    let mut seen_ids: HashSet<String> = HashSet::new();
-    let mut seen_fallback: HashSet<(String, String, String)> = HashSet::new();
-    output.retain(|place| {
-        if let Some(id) = &place.id {
-            seen_ids.insert(id.clone())
-        } else {
-            let key = (
-                place.name.clone().unwrap_or_default(),
-                place.address.clone().unwrap_or_default(),
-                place.city.clone().unwrap_or_default(),
-            );
-            seen_fallback.insert(key)
-        }
-    });
-
+    let mut seen: HashSet<String> = HashSet::new();
+    output.retain(|place| seen.insert(place_key(place)));
     output
 }
 
@@ -279,5 +336,25 @@ mod tests {
         assert_eq!(q[3], [Coordinate { x: 2., y: 2. }, Coordinate { x: 4., y: 0. }]);
         let area: f64 = q.iter().map(|c| (c[1].x - c[0].x) * (c[0].y - c[1].y)).sum();
         assert_eq!(area, 16.);
+    }
+
+    fn ids(v: &[&str]) -> HashSet<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn keeps_splitting_while_children_reveal_new_places() {
+        let c: Cell = [Coordinate { x: 0., y: 1. }, Coordinate { x: 1., y: 0. }];
+        let parent = ids(&["a", "b"]);
+        let kids = vec![(c, ids(&["a", "x"])), (c, ids(&["b"]))];
+        assert!(splitting_revealed_more(&parent, &kids));
+    }
+
+    #[test]
+    fn stops_when_children_only_repartition_the_parent() {
+        let c: Cell = [Coordinate { x: 0., y: 1. }, Coordinate { x: 1., y: 0. }];
+        let parent = ids(&["a", "b", "c"]);
+        let kids = vec![(c, ids(&["a"])), (c, ids(&["b", "c"])), (c, ids(&[])), (c, ids(&[]))];
+        assert!(!splitting_revealed_more(&parent, &kids));
     }
 }
